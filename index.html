@@ -1,0 +1,1197 @@
+<title>Pocket Snake</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0f15">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;800&display=swap">
+<style>
+  /* One visual world (dark arcade board), painted explicitly so it holds on any host theme */
+  :root {
+    color-scheme: dark;
+    --ground: #0d0f15;
+    --board-a: #161923;
+    --board-b: #131620;
+    --panel: #1b1f2b;
+    --edge: #303750;
+    --text: #e6e9f5;
+    --dim: #8a91a8;
+    --green: #8be28b;
+    --red: #ff8a8a;
+    --gold: #ffd166;
+    --key: #222739;
+    --key-press: #2e3550;
+    --font: "Rubik", "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  /* Also runs outside the artifact viewer (saved file / phone app), so reset basics here */
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--text);
+    font-family: var(--font);
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button { font: inherit; color: inherit; touch-action: manipulation; }
+  button:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+
+  .app {
+    height: 100%;
+    box-sizing: border-box;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding-inline: 16px;
+    padding-block: 10px;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: "hud" "stage" "pad";
+    gap: 10px;
+  }
+
+  /* ---------- score bar ---------- */
+  .hud {
+    grid-area: hud;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 12px;
+  }
+  .stat { display: flex; align-items: baseline; gap: 8px; }
+  .stat.right { justify-content: flex-end; }
+  .lbl {
+    font-size: 11px; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--dim);
+  }
+  .num {
+    font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums;
+    min-width: 2ch;
+  }
+  .num.gold { color: var(--gold); }
+
+  .music { display: flex; justify-content: center; gap: 6px; min-width: 0; }
+  .song {
+    display: flex; align-items: center; gap: 8px;
+    min-width: 0; max-width: 100%;
+    min-height: 40px; padding: 0 14px;
+    background: var(--panel); border: 1px solid var(--edge); border-radius: 999px;
+    cursor: pointer; font-size: 13px; font-weight: 500;
+  }
+  .song:hover { border-color: var(--green); }
+  .song svg { flex: none; color: var(--green); }
+  .song-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .song.empty .song-name { color: var(--dim); }
+  .mute {
+    flex: none; width: 40px; height: 40px; display: grid; place-items: center;
+    background: var(--panel); border: 1px solid var(--edge); border-radius: 50%;
+    cursor: pointer; color: var(--text);
+  }
+  .mute[aria-pressed="true"] { color: var(--red); }
+  .mute[hidden] { display: none; }
+
+  /* ---------- board ---------- */
+  .stage {
+    grid-area: stage;
+    min-height: 0; min-width: 0;
+    display: grid; place-items: center;
+    touch-action: none;           /* swipes steer the snake instead of scrolling */
+    position: relative;
+  }
+  .board {
+    position: relative;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px var(--edge), 0 18px 40px -20px #000;
+  }
+  canvas { display: block; }
+
+  .overlay {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    padding: 16px;
+    background: rgba(13, 15, 21, .45);
+  }
+  .panel {
+    box-sizing: border-box;
+    width: min(340px, 100%);
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 18px;
+    padding: 22px 22px 20px;
+    text-align: center;
+    display: grid; gap: 10px;
+    animation: rise .35s cubic-bezier(.2, .8, .2, 1);
+  }
+  @keyframes rise { from { transform: translateY(14px); } to { transform: none; } }
+  .panel h1, .panel h2 { margin: 0; font-weight: 800; line-height: 1; text-wrap: balance; }
+  .panel h1 { font-size: clamp(36px, 9vw, 48px); color: var(--green); letter-spacing: .04em; }
+  .panel h2 { font-size: clamp(28px, 7vw, 36px); }
+  .panel h2.dead { color: var(--red); }
+  .panel h2.win { color: var(--gold); }
+  .panel p { margin: 0; color: var(--dim); font-size: 14px; line-height: 1.45; text-wrap: balance; }
+  .panel p strong { color: var(--text); font-weight: 500; }
+  .big { font-size: 44px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .best-line { color: var(--dim); font-size: 14px; }
+  .best-line.new { color: var(--gold); font-weight: 700; }
+  .go {
+    margin-top: 6px; justify-self: center;
+    min-height: 48px; padding: 0 28px;
+    background: var(--green); color: #10210f;
+    border: 0; border-radius: 999px;
+    font-size: 16px; font-weight: 700; cursor: pointer;
+  }
+  .go:active { transform: scale(.97); }
+  .keys-hint { font-size: 12px !important; }
+
+  /* ---------- coins ---------- */
+  .coin {
+    flex: none;
+    display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #fff3c4 0 18%, var(--gold) 20% 100%);
+    box-shadow: inset 0 0 0 2px #d9a93a;
+  }
+  .coins {
+    display: flex; align-items: center; gap: 6px;
+    min-height: 32px; padding: 0 10px;
+    background: var(--panel); border: 1px solid var(--edge); border-radius: 999px;
+  }
+  .coins .num { font-size: 16px; color: var(--gold); min-width: 1ch; }
+  .coins.bump { animation: bump .3s ease-out; }
+  @keyframes bump { 40% { transform: scale(1.15); } }
+  .balance {
+    justify-self: center;
+    display: inline-flex; align-items: center; gap: 8px;
+    font-weight: 700; color: var(--gold); font-variant-numeric: tabular-nums;
+  }
+  .earned { color: var(--gold); font-weight: 700; font-size: 15px; display: inline-flex; gap: 6px; align-items: center; justify-content: center; }
+
+  /* ---------- menu buttons ---------- */
+  .btn-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 6px; }
+  .btn-row .go { margin-top: 0; }
+  .alt {
+    min-height: 48px; padding: 0 24px;
+    background: transparent; color: var(--text);
+    border: 1px solid var(--edge); border-radius: 999px;
+    font-size: 16px; font-weight: 700; cursor: pointer;
+  }
+  .alt:hover { border-color: var(--green); }
+  .alt:active { transform: scale(.97); }
+  .alt .coin { margin-right: 6px; vertical-align: -2px; }
+
+  /* ---------- shop ---------- */
+  .panel.shop {
+    width: min(460px, 100%);
+    max-height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    padding: 18px 16px 16px;
+  }
+  .shop-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .shop-head h2 { font-size: 28px; }
+  .skins { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 10px; }
+  .skin {
+    display: grid; gap: 8px; align-content: start;
+    padding: 12px 10px 10px;
+    background: var(--ground); border: 1px solid var(--edge); border-radius: 14px;
+    text-align: center;
+  }
+  .skin.on { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+  .swatch {
+    position: relative; height: 22px; border-radius: 999px;
+    margin: 4px 6px 0;
+  }
+  .swatch::before, .swatch::after {       /* two little eyes on the head end */
+    content: ""; position: absolute; right: 5px; width: 5px; height: 5px;
+    border-radius: 50%; background: #fff; box-shadow: inset 1px 0 0 1px #111;
+  }
+  .swatch::before { top: 4px; } .swatch::after { bottom: 4px; }
+  .skin-name { font-weight: 700; font-size: 14px; color: var(--text); }
+  .skin button {
+    min-height: 38px; border-radius: 999px; font-weight: 700; font-size: 14px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .skin .buy { background: var(--gold); color: #2b2008; border: 0; }
+  .skin .buy:disabled { background: transparent; color: var(--dim); border: 1px dashed var(--edge); cursor: default; }
+  .skin .equip { background: transparent; border: 1px solid var(--edge); color: var(--text); }
+  .skin .equipped { background: transparent; border: 0; color: var(--green); cursor: default; }
+
+  /* ---------- redeem codes (in the shop) ---------- */
+  .redeem {
+    display: grid; gap: 6px; text-align: left;
+    padding: 10px; border: 1px dashed var(--edge); border-radius: 14px;
+  }
+  .redeem-row { display: flex; gap: 8px; }
+  .redeem-row .field { flex: 1; min-width: 0; text-transform: uppercase; letter-spacing: .08em; }
+  .redeem-row button {
+    flex: none; min-height: 44px; padding: 0 16px;
+    border: 0; border-radius: 999px; background: var(--gold); color: #2b2008;
+    font-weight: 700; font-size: 14px; cursor: pointer;
+  }
+  .redeem-row button:active { transform: scale(.97); }
+  .code-msg { margin: 0; font-size: 13px; }
+  .code-msg:empty { display: none; }
+  .code-msg.ok { color: var(--gold); font-weight: 700; }
+  .code-msg.error { color: var(--red); }
+
+  /* ---------- app updates (only shown inside the Android app) ---------- */
+  .field-label { text-align: left; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+  .field {
+    box-sizing: border-box; width: 100%; min-height: 44px; padding: 0 12px;
+    background: var(--ground); color: var(--text);
+    border: 1px solid var(--edge); border-radius: 12px;
+    font: 14px var(--font);
+    -webkit-user-select: text; user-select: text;
+  }
+  .field:focus { outline: none; border-color: var(--green); }
+  .upd-status { min-height: 1.45em; }
+  .upd-status.ready { color: var(--gold); font-weight: 700; }
+  .upd-status.error { color: var(--red); }
+  .banner {
+    display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
+    padding: 8px 10px; border: 1px solid var(--gold); border-radius: 12px;
+    color: var(--gold); font-weight: 700; font-size: 14px;
+  }
+  .banner button {
+    min-height: 34px; padding: 0 14px; border: 0; border-radius: 999px;
+    background: var(--gold); color: #2b2008; font-weight: 700; cursor: pointer;
+  }
+  .version { font-size: 12px !important; color: var(--dim); }
+  .toast {
+    position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 14px);
+    transform: translateX(-50%);
+    max-width: calc(100% - 32px); box-sizing: border-box;
+    padding: 10px 18px; border-radius: 999px;
+    background: var(--gold); color: #2b2008; font-weight: 700; font-size: 14px;
+    box-shadow: 0 10px 30px -10px #000; z-index: 10;
+    animation: rise .35s cubic-bezier(.2, .8, .2, 1);
+  }
+  @media (pointer: coarse) { .keys-hint { display: none; } }
+
+  /* ---------- touch pad ---------- */
+  .pad {
+    grid-area: pad;
+    display: none;
+    grid-template-columns: repeat(3, 68px);
+    grid-template-rows: repeat(3, 58px);
+    grid-template-areas: ". up ." "left mid right" ". down .";
+    gap: 8px;
+    justify-content: center;
+    padding-bottom: 4px;
+  }
+  @media (pointer: coarse), (hover: none) { .pad { display: grid; } }
+  .pad button {
+    display: grid; place-items: center;
+    background: var(--key); border: 1px solid var(--edge); border-radius: 16px;
+    color: var(--text); cursor: pointer;
+    touch-action: none;
+  }
+  .pad button.pressed { background: var(--key-press); border-color: var(--green); }
+  .pad .up { grid-area: up; } .pad .down { grid-area: down; }
+  .pad .left { grid-area: left; } .pad .right { grid-area: right; }
+  .pad .mid { grid-area: mid; border-radius: 50%; width: 50px; height: 50px; place-self: center; color: var(--dim); }
+
+  /* Phone held sideways: board on the left, pad on the right */
+  @media (orientation: landscape) and (pointer: coarse) {
+    .app {
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-areas: "hud hud" "stage pad";
+    }
+    .pad { align-self: center; }
+  }
+  /* Narrow phones: scores on one row, the song gets its own row below */
+  @media (max-width: 520px) {
+    .hud {
+      grid-template-columns: auto auto minmax(0, 1fr);
+      grid-template-areas: "score best coins" "music music music";
+      gap: 8px 16px;
+    }
+    .s-score { grid-area: score; }
+    .s-best { grid-area: best; justify-content: flex-start; }
+    .music { grid-area: music; }
+    .coins { grid-area: coins; justify-self: end; }
+    .num { font-size: 20px; }
+    .song { padding: 0 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .panel { animation: none; }
+  }
+</style>
+
+<div class="app">
+  <header class="hud">
+    <div class="stat s-score"><span class="lbl">Score</span><span class="num" id="score">0</span></div>
+    <div class="music">
+      <button class="song empty" id="songBtn" type="button" title="Pick a song from your device">
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 18.5a3.5 3.5 0 1 1-2-3.16V4.5l12-2.5v13a3.5 3.5 0 1 1-2-3.16V6.4l-8 1.67V18.5Z"/></svg>
+        <span class="song-name" id="songName">Pick a song</span>
+      </button>
+      <button class="mute" id="muteBtn" type="button" aria-label="Mute music" aria-pressed="false" hidden>
+        <svg id="muteIcon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"></svg>
+      </button>
+    </div>
+    <div class="stat right s-best"><span class="lbl">Best</span><span class="num" id="best">0</span></div>
+    <div class="coins" id="coinChip" title="Coins"><span class="coin"></span><span class="num" id="coins">0</span></div>
+  </header>
+
+  <main class="stage" id="stage">
+    <div class="board" id="board">
+      <canvas id="cv"></canvas>
+      <div class="overlay" id="overlay"></div>
+    </div>
+  </main>
+
+  <nav class="pad" id="pad" aria-label="Direction buttons">
+    <button class="up" data-dir="Up" aria-label="Up" type="button"><svg width="26" height="26" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="m6 15 6-6 6 6"/></svg></button>
+    <button class="left" data-dir="Left" aria-label="Left" type="button"><svg width="26" height="26" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="m15 6-6 6 6 6"/></svg></button>
+    <button class="mid" data-act="pause" aria-label="Pause" type="button"><svg width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg></button>
+    <button class="right" data-dir="Right" aria-label="Right" type="button"><svg width="26" height="26" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="m9 6 6 6-6 6"/></svg></button>
+    <button class="down" data-dir="Down" aria-label="Down" type="button"><svg width="26" height="26" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/></svg></button>
+  </nav>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+  <input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.wav,.ogg" hidden>
+  <audio id="audio" loop preload="auto"></audio>
+</div>
+
+<script>
+(() => {
+  // ---------- settings (same feel as the desktop version) ----------
+  const START_DELAY = 140, MIN_DELAY = 65;
+  const C = {
+    boardA: "#161923", boardB: "#131620",
+    head: "#9df29a", tail: "#2c7a4b",
+    deadHead: "#ff8a8a", deadTail: "#7a2c35",
+    apple: "#ff5c7a", leaf: "#5fd068", gold: "#ffd166",
+  };
+  const DIRS = {
+    Up: [0, -1], Down: [0, 1], Left: [-1, 0], Right: [1, 0],
+    ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+    w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0],
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const stage = $("stage"), board = $("board"), cv = $("cv"), ctx = cv.getContext("2d");
+  const overlay = $("overlay"), scoreEl = $("score"), bestEl = $("best");
+  const songBtn = $("songBtn"), songName = $("songName"), muteBtn = $("muteBtn");
+  const fileInput = $("fileInput"), audio = $("audio");
+
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  };
+
+  // ---------- helpers ----------
+  const clamp01 = (t) => Math.max(0, Math.min(1, t));
+  const easeOut = (t) => 1 - Math.pow(1 - clamp01(t), 3);
+  const now = () => performance.now() / 1000;
+  const same = (a, b) => a[0] === b[0] && a[1] === b[1];
+  function mix(c1, c2, t) {
+    t = clamp01(t);
+    const a = [1, 3, 5].map((i) => parseInt(c1.slice(i, i + 2), 16));
+    const b = [1, 3, 5].map((i) => parseInt(c2.slice(i, i + 2), 16));
+    return "#" + a.map((x, i) => Math.round(x + (b[i] - x) * t).toString(16).padStart(2, "0")).join("");
+  }
+  const buzz = (ms) => { try { navigator.vibrate?.(ms); } catch {} };
+
+  // ---------- game state ----------
+  let COLS = 24, ROWS = 18, cell = 24, W = 0, H = 0, dpr = 1, bg = null;
+  let state = "start";               // start, playing, paused, over
+  let snake, prev, dir, queue, food, foodBorn, score, delay;
+  let lastStep = 0, pausedElapsed = 0, particles = [], popups = [];
+  let deadTime = null, won = false, newBest = false;
+  let best = parseInt(store.get("pocketSnakeBest") || "0", 10) || 0;
+  let shopOpen = false, updatesOpen = false, codesOpen = false, earnedThisRun = 0;
+  const inSubmenu = () => shopOpen || updatesOpen || codesOpen;
+  const closeSubmenus = () => { shopOpen = false; updatesOpen = false; codesOpen = false; };
+
+  // ---------- app updates: only inside the Android app, which provides window.AndroidApp ----------
+  const app = window.AndroidApp || null;
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  function appInfo() {
+    if (!app) return null;
+    try { return JSON.parse(app.info()); } catch { return null; }
+  }
+  function statusText(info) {
+    if (!info) return { text: "", cls: "" };
+    switch (info.status) {
+      case "checking": return { text: "Checking for updates…", cls: "" };
+      case "ready": return { text: `Version ${info.downloaded} is ready. Restart to play it.`, cls: "ready" };
+      case "latest": return { text: "You have the newest version.", cls: "" };
+      case "error": return { text: "Couldn't check: " + info.message, cls: "error" };
+      default: return info.url ? { text: "", cls: "" }
+        : { text: "Type the update address from Snake Game Manager, then tap Save.", cls: "" };
+    }
+  }
+  function renderUpdStatus() {
+    const el = document.getElementById("updStatus");
+    if (!el) return false;
+    const info = appInfo(), st = statusText(info);
+    el.textContent = st.text;
+    el.className = "upd-status " + st.cls;
+    const restart = document.getElementById("updRestart");
+    if (restart) restart.hidden = !(info && info.status === "ready");
+    return true;
+  }
+  // Switch to a downloaded update by itself, but only on the main menu (never mid-game)
+  function autoApplyUpdate() {
+    const info = appInfo();
+    if (!info || info.status !== "ready") return false;
+    if (state !== "start" || inSubmenu()) return false;
+    // Only try once per version, so a broken download can't cause endless restarts
+    let tried = null;
+    try { tried = sessionStorage.getItem("pocketSnakeAutoRestart"); } catch {}
+    if (tried === String(info.downloaded)) return false;
+    try { sessionStorage.setItem("pocketSnakeAutoRestart", String(info.downloaded)); } catch {}
+    app.restart();
+    return true;
+  }
+
+  function showToast(text) {
+    const t = document.getElementById("toast");
+    t.textContent = text;
+    t.hidden = false;
+    clearTimeout(showToast.timer);
+    showToast.timer = setTimeout(() => { t.hidden = true; }, 3500);
+  }
+  function announceUpdate() {
+    // After an update, say which version is now running
+    const info = appInfo();
+    if (!info) return;
+    const last = parseInt(store.get("pocketSnakeLastVersion") || "0", 10) || 0;
+    if (last && info.running > last) showToast(`Updated to version ${info.running}!`);
+    store.set("pocketSnakeLastVersion", String(info.running));
+  }
+  // The app calls this when an update check finishes
+  window.onAppUpdate = () => {
+    if (autoApplyUpdate()) return;
+    if (updatesOpen && renderUpdStatus()) return;
+    if (state !== "playing") showOverlay();
+  };
+  if (app) {
+    // Look for updates every 2 minutes while the app is open (the app also checks on launch)
+    setInterval(() => { if (!document.hidden) try { app.checkNow(); } catch {} }, 120000);
+  }
+
+  // ---------- shop: snake colors ----------
+  // kind "fade": head color fades to tail color. "stripes": colors repeat down the body.
+  // "rainbow": colors flow along the body.
+  const SKINS = [
+    { id: "classic",  name: "Classic",  price: 0,   kind: "fade", head: "#9df29a", tail: "#2c7a4b" },
+    { id: "ocean",    name: "Ocean",    price: 10,  kind: "fade", head: "#7fd7ff", tail: "#1f4f9c" },
+    { id: "bubble",   name: "Bubblegum", price: 20, kind: "fade", head: "#ffb3dd", tail: "#b0407f" },
+    { id: "sunset",   name: "Sunset",   price: 30,  kind: "fade", head: "#ffd27a", tail: "#8a2f7a" },
+    { id: "lava",     name: "Lava",     price: 45,  kind: "stripes", colors: ["#ff7a3d", "#3a1a14"] },
+    { id: "midnight", name: "Midnight", price: 60,  kind: "fade", head: "#c3b5ff", tail: "#2a1f66" },
+    { id: "bee",      name: "Bumblebee", price: 80, kind: "stripes", colors: ["#ffd166", "#1d1d1d"] },
+    { id: "gold",     name: "Gold",     price: 120, kind: "fade", head: "#fff0a8", tail: "#b8860b" },
+    { id: "coral",    name: "Coral",    price: 160, kind: "stripes", colors: ["#ff5c5c", "#ffd166", "#1d1d1d", "#ffd166"] },
+    { id: "rainbow",  name: "Rainbow",  price: 250, kind: "rainbow" },
+  ];
+  const skinById = (id) => SKINS.find((s) => s.id === id) || SKINS[0];
+  let coins = parseInt(store.get("pocketSnakeCoins") || "0", 10) || 0;
+  let owned;
+  try { owned = new Set(JSON.parse(store.get("pocketSnakeOwned") || "[]")); } catch { owned = new Set(); }
+  owned.add("classic");
+  let skin = skinById(store.get("pocketSnakeSkin"));
+  if (!owned.has(skin.id)) skin = SKINS[0];
+
+  function saveWallet() {
+    store.set("pocketSnakeCoins", String(coins));
+    store.set("pocketSnakeOwned", JSON.stringify([...owned]));
+    store.set("pocketSnakeSkin", skin.id);
+  }
+
+  function buySkin(id) {
+    const s = skinById(id);
+    if (owned.has(s.id) || coins < s.price) return;
+    coins -= s.price;
+    owned.add(s.id);
+    skin = s;
+    saveWallet();
+    updateHud();
+    buzz(20);
+  }
+
+  // ---------- redeem codes: code -> coins. Each code works once per device. ----------
+  // To add a code, add a line like  "SUMMER": 500,  (codes are not case sensitive)
+  const CODES = {
+    "2026": 1000,
+    "123": 100000,
+  };
+  let redeemed;
+  try { redeemed = new Set(JSON.parse(store.get("pocketSnakeCodes") || "[]")); } catch { redeemed = new Set(); }
+  let codeMsg = { text: "", cls: "" };
+
+  function redeemCode(raw) {
+    const code = String(raw || "").trim().toUpperCase();
+    if (!code) return { text: "Type a code first.", cls: "error" };
+    const reward = CODES[code];
+    if (!reward) return { text: "That code doesn't exist.", cls: "error" };
+    if (redeemed.has(code)) return { text: "You already used that code.", cls: "error" };
+    redeemed.add(code);
+    store.set("pocketSnakeCodes", JSON.stringify([...redeemed]));
+    coins += reward;
+    saveWallet();
+    updateHud();
+    bumpCoins();
+    buzz(30);
+    return { text: `Code redeemed: +${reward} coins!`, cls: "ok" };
+  }
+
+  function equipSkin(id) {
+    if (!owned.has(id)) return;
+    skin = skinById(id);
+    saveWallet();
+  }
+
+  // Color of body segment i (0 = head) out of n, at time t
+  function segColor(i, n, t) {
+    if (skin.kind === "stripes") return skin.colors[i % skin.colors.length];
+    if (skin.kind === "rainbow") return `hsl(${(i * 24 - t * 90) % 360 + 360} 85% 66%)`;
+    return mix(skin.head, skin.tail, n > 1 ? i / (n - 1) : 0);
+  }
+
+  // CSS preview of a skin for the shop cards (tail on the left, head on the right)
+  function swatchCss(s) {
+    if (s.kind === "stripes") {
+      const w = 12;
+      const stops = s.colors.map((c, i) => `${c} ${i * w}px ${(i + 1) * w}px`).join(", ");
+      return `repeating-linear-gradient(90deg, ${stops})`;
+    }
+    if (s.kind === "rainbow")
+      return "linear-gradient(90deg, #ff6b6b, #ffb86b, #ffe66b, #7ef08a, #6bd6ff, #8a7bff, #e07bff)";
+    return `linear-gradient(90deg, ${s.tail}, ${s.head})`;
+  }
+
+  function chooseGrid() {
+    // Shape the board to fill the screen: tall on phones, wide on computers
+    const r = stage.getBoundingClientRect();
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    if (r.height >= r.width) {
+      COLS = 16;
+      ROWS = clamp(Math.floor(r.height / (r.width / COLS)), 16, 34);
+    } else {
+      ROWS = 18;
+      COLS = clamp(Math.floor(r.width / (r.height / ROWS)), 18, 34);
+    }
+  }
+
+  function resize() {
+    const r = stage.getBoundingClientRect();
+    cell = Math.max(8, Math.floor(Math.min(r.width / COLS, r.height / ROWS)));
+    W = cell * COLS; H = cell * ROWS;
+    dpr = Math.min(3, window.devicePixelRatio || 1);
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    cv.style.width = W + "px"; cv.style.height = H + "px";
+    board.style.width = W + "px"; board.style.height = H + "px";
+
+    // Checkerboard is drawn once and reused every frame
+    bg = document.createElement("canvas");
+    bg.width = cv.width; bg.height = cv.height;
+    const b = bg.getContext("2d");
+    b.scale(dpr, dpr);
+    for (let x = 0; x < COLS; x++)
+      for (let y = 0; y < ROWS; y++) {
+        b.fillStyle = (x + y) % 2 ? C.boardB : C.boardA;
+        b.fillRect(x * cell, y * cell, cell, cell);
+      }
+  }
+
+  function reset() {
+    const mx = Math.floor(COLS / 2), my = Math.floor(ROWS / 2);
+    snake = [[mx, my], [mx - 1, my], [mx - 2, my]];
+    prev = snake.map((p) => p.slice());
+    dir = [1, 0]; queue = [];
+    score = 0; delay = START_DELAY;
+    particles = []; popups = [];
+    deadTime = null; won = false; newBest = false;
+    lastStep = now();
+    placeFood();
+    updateHud();
+  }
+
+  function newGame() { chooseGrid(); resize(); reset(); }
+
+  function placeFood() {
+    const taken = new Set(snake.map((p) => p[0] + "," + p[1]));
+    const free = [];
+    for (let x = 0; x < COLS; x++) for (let y = 0; y < ROWS; y++)
+      if (!taken.has(x + "," + y)) free.push([x, y]);
+    food = free[Math.floor(Math.random() * free.length)];
+    foodBorn = now();
+  }
+
+  const coinsEl = $("coins"), coinChip = $("coinChip");
+  function updateHud() {
+    scoreEl.textContent = score;
+    bestEl.textContent = Math.max(best, score);
+    coinsEl.textContent = coins;
+  }
+  function bumpCoins() {
+    coinChip.classList.remove("bump");
+    void coinChip.offsetWidth;   // restart the animation
+    coinChip.classList.add("bump");
+  }
+
+  // ---------- controls ----------
+  function queueDir(d) {
+    // Up to 3 queued turns so fast swipes / taps aren't lost
+    const last = queue.length ? queue[queue.length - 1] : dir;
+    if (same(d, last) || (d[0] + last[0] === 0 && d[1] + last[1] === 0) || queue.length >= 3) return;
+    queue.push(d);
+  }
+
+  function steer(name) {
+    const d = DIRS[name];
+    if (!d) return;
+    if (state === "start" && !inSubmenu()) startGame();
+    if (state === "playing") queueDir(d);
+  }
+
+  function startGame() {
+    state = "playing";
+    closeSubmenus();
+    earnedThisRun = 0;
+    lastStep = now();
+    showOverlay();
+    ensureMusic();
+  }
+
+  function playAgain() {
+    newGame();
+    startGame();
+  }
+
+  function toMenu() {
+    // Leaving mid-game is fine: coins you already picked up are kept
+    newGame();
+    state = "start";
+    closeSubmenus();
+    if (autoApplyUpdate()) return;
+    showOverlay();
+  }
+
+  function togglePause() {
+    if (state === "playing") {
+      state = "paused";
+      pausedElapsed = now() - lastStep;
+    } else if (state === "paused") {
+      state = "playing";
+      lastStep = now() - pausedElapsed;
+      ensureMusic();
+    } else if (state === "start") {
+      if (!inSubmenu()) startGame();
+      return;
+    }
+    showOverlay();
+  }
+
+  document.addEventListener("keydown", (e) => {
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (e.target === fileInput) return;
+    if (k === "Escape") {
+      if (inSubmenu()) { closeSubmenus(); showOverlay(); }
+      else if (state === "paused" || state === "over") toMenu();
+      else if (state === "playing") togglePause();
+      return;
+    }
+    if (inSubmenu()) return;                    // let typing, Tab and Enter work in the shop / updates
+    if (DIRS[k]) { e.preventDefault(); steer(k); return; }
+    if (k === " " || k === "p" || k === "Enter" || k === "r") {
+      if (e.target.closest?.("button") && k === "Enter") return;  // Enter presses the focused button
+      e.preventDefault();
+      if (state === "over") { if (k !== "p") playAgain(); }
+      else if (state === "start") { if (k !== "r") startGame(); }
+      else if (k === " " || k === "p") togglePause();
+    } else if (k === "m") toggleMute();
+    else if (k === "l") fileInput.click();
+  });
+
+  // Swipe anywhere on the board. You don't need to lift your finger between turns.
+  let touchX = 0, touchY = 0, tracking = false;
+  stage.addEventListener("touchstart", (e) => {
+    const t = e.touches[0];
+    touchX = t.clientX; touchY = t.clientY; tracking = true;
+    ensureMusic();
+  }, { passive: true });
+  stage.addEventListener("touchmove", (e) => {
+    if (!tracking || inSubmenu()) return;   // in the shop, a swipe scrolls the list
+    e.preventDefault();
+    const t = e.touches[0];
+    const dx = t.clientX - touchX, dy = t.clientY - touchY;
+    const need = Math.max(18, cell * 0.7);
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < need) return;
+    if (state === "playing" || state === "start")
+      steer(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "Right" : "Left") : (dy > 0 ? "Down" : "Up"));
+    touchX = t.clientX; touchY = t.clientY;
+  }, { passive: false });
+  stage.addEventListener("touchend", () => { tracking = false; });
+
+  // On-screen buttons react on press, not release, so they feel instant
+  document.getElementById("pad").addEventListener("pointerdown", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    e.preventDefault();
+    btn.classList.add("pressed");
+    setTimeout(() => btn.classList.remove("pressed"), 120);
+    ensureMusic();
+    if (btn.dataset.dir) steer(btn.dataset.dir);
+    else if (btn.dataset.act === "pause" && state !== "over") togglePause();
+  });
+
+  overlay.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-act]");
+    if (!btn) return;
+    const act = btn.dataset.act, id = btn.dataset.skin;
+    if (act === "start") startGame();
+    else if (act === "resume") togglePause();
+    else if (act === "again") playAgain();
+    else if (act === "menu") toMenu();
+    else if (act === "shop") { shopOpen = true; codeMsg = { text: "", cls: "" }; showOverlay(); }
+    else if (act === "back") { closeSubmenus(); if (!autoApplyUpdate()) showOverlay(); }
+    else if (act === "updates") { updatesOpen = true; showOverlay(); }
+    else if (act === "codes") {
+      codesOpen = true;
+      codeMsg = { text: "", cls: "" };
+      showOverlay();
+      document.getElementById("codeInput")?.focus({ preventScroll: true });
+    }
+    else if (act === "upd-save" && app) {
+      app.setUpdateUrl(document.getElementById("updUrl").value.trim());  // also starts a check
+      renderUpdStatus();
+    }
+    else if (act === "upd-check" && app) { app.checkNow(); renderUpdStatus(); }
+    else if (act === "restart" && app) app.restart();
+    else if (act === "buy" || act === "equip") {
+      const scroll = overlay.querySelector(".shop")?.scrollTop || 0;
+      act === "buy" ? buySkin(id) : equipSkin(id);
+      showOverlay();
+      const panel = overlay.querySelector(".shop");
+      if (panel) { panel.scrollTop = scroll; panel.style.animation = "none"; }
+      overlay.querySelector(`[data-card="${id}"] button`)?.focus({ preventScroll: true });
+    }
+  });
+
+  overlay.addEventListener("submit", (e) => {
+    if (e.target.id !== "redeemForm") return;
+    e.preventDefault();
+    const input = document.getElementById("codeInput");
+    codeMsg = redeemCode(input.value);
+    // Redraw the shop (new coins may unlock colors) without jumping the scroll
+    const scroll = overlay.querySelector(".shop")?.scrollTop || 0;
+    showOverlay();
+    const panel = overlay.querySelector(".shop");
+    if (panel) { panel.scrollTop = scroll; panel.style.animation = "none"; }
+    const again = document.getElementById("codeInput");
+    if (codeMsg.cls === "error") { again.value = input.value; again.focus({ preventScroll: true }); }
+    else again.blur();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && state === "playing") togglePause();
+  });
+
+  // ---------- overlay screens ----------
+  function showOverlay() {
+    if (state === "playing") { overlay.hidden = true; overlay.innerHTML = ""; return; }
+    overlay.hidden = false;
+    const coin = '<span class="coin" aria-hidden="true"></span>';
+    let html = "", cls = "panel";
+    const info = appInfo();
+    const readyBanner = info && info.status === "ready"
+      ? `<div class="banner">New version ready <button data-act="restart" type="button">Restart</button></div>` : "";
+    const redeemForm = (label) => `
+        <form class="redeem" id="redeemForm" autocomplete="off">
+          <label class="field-label" for="codeInput">${label}</label>
+          <div class="redeem-row">
+            <input class="field" id="codeInput" name="code" maxlength="24" placeholder="Enter code"
+              autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="done">
+            <button type="submit">Redeem</button>
+          </div>
+          <p class="code-msg ${codeMsg.cls}" id="codeMsg" role="status">${esc(codeMsg.text)}</p>
+        </form>`;
+    if (state === "start" && codesOpen) {
+      html = `<h2>Enter a code</h2>
+        <span class="balance">${coin}${coins} coins</span>
+        <p>Got a code from a friend? Type it in to get free coins.</p>
+        ${redeemForm("Code")}
+        <div class="btn-row"><button class="alt" data-act="back" type="button">Back</button></div>`;
+    } else if (state === "start" && updatesOpen && info) {
+      html = `<h2>Updates</h2>
+        <p>You're playing <strong>version ${info.running}</strong>.</p>
+        <label class="field-label" for="updUrl">Update address</label>
+        <input class="field" id="updUrl" type="url" inputmode="url" autocomplete="off" autocapitalize="off"
+          spellcheck="false" placeholder="https://yourname.github.io/pocket-snake/" value="${esc(info.url || "")}">
+        <p class="upd-status" id="updStatus"></p>
+        <div class="btn-row">
+          <button class="go" data-act="restart" id="updRestart" type="button" hidden>Restart now</button>
+          <button class="alt" data-act="upd-save" type="button">Save &amp; check</button>
+          <button class="alt" data-act="back" type="button">Back</button>
+        </div>`;
+    } else if (state === "start" && shopOpen) {
+      cls = "panel shop";
+      const cards = SKINS.map((s) => {
+        let btn;
+        if (s.id === skin.id) btn = `<button class="equipped" type="button" disabled>Equipped</button>`;
+        else if (owned.has(s.id)) btn = `<button class="equip" data-act="equip" data-skin="${s.id}" type="button">Use</button>`;
+        else if (coins >= s.price) btn = `<button class="buy" data-act="buy" data-skin="${s.id}" type="button">${coin}${s.price}</button>`;
+        else btn = `<button class="buy" type="button" disabled>${coin}${s.price}</button>`;
+        return `<div class="skin${s.id === skin.id ? " on" : ""}" data-card="${s.id}">
+            <div class="swatch" style="background:${swatchCss(s)}"></div>
+            <div class="skin-name">${s.name}</div>${btn}</div>`;
+      }).join("");
+      html = `<div class="shop-head"><h2>Shop</h2><span class="balance">${coin}${coins}</span></div>
+        ${redeemForm("Have a code?")}
+        <div class="skins">${cards}</div>
+        <p>Earn 1 coin for every apple you eat.</p>
+        <button class="go" data-act="back" type="button">Back</button>`;
+    } else if (state === "start") {
+      html = `${readyBanner}<h1>SNAKE</h1>
+        <span class="balance">${coin}${coins} coins</span>
+        <p><strong>Swipe</strong> on the board or use the <strong>arrow buttons</strong> to steer. Every apple is worth 1 coin. Spend coins on new snake colors in the shop.</p>
+        <p class="keys-hint">On a computer: arrow keys or WASD &middot; Space to pause &middot; M to mute</p>
+        <div class="btn-row">
+          <button class="go" data-act="start" type="button">Play</button>
+          <button class="alt" data-act="shop" type="button">Shop</button>
+          <button class="alt" data-act="codes" type="button">Enter code</button>
+          ${info ? '<button class="alt" data-act="updates" type="button">Updates</button>' : ""}
+        </div>
+        ${info ? `<p class="version">Version ${info.running}</p>` : ""}`;
+    } else if (state === "paused") {
+      html = `<h2>Paused</h2>
+        <div class="btn-row">
+          <button class="go" data-act="resume" type="button">Resume</button>
+          <button class="alt" data-act="menu" type="button">Menu</button>
+        </div>`;
+    } else {
+      html = `${readyBanner}<h2 class="${won ? "win" : "dead"}">${won ? "You win!" : "Game over"}</h2>
+        <div class="big">${score}</div>
+        <div class="earned">+${earnedThisRun} ${coin} coin${earnedThisRun === 1 ? "" : "s"}</div>
+        <div class="best-line${newBest ? " new" : ""}">${newBest ? "New best score!" : "Best: " + best}</div>
+        <div class="btn-row">
+          <button class="go" data-act="again" type="button">Play again</button>
+          <button class="alt" data-act="menu" type="button">Menu</button>
+        </div>`;
+    }
+    overlay.innerHTML = `<div class="${cls}" role="dialog" aria-live="polite">${html}</div>`;
+    renderUpdStatus();
+    if (!matchMedia("(pointer: coarse)").matches) overlay.querySelector(".go")?.focus({ preventScroll: true });
+  }
+
+  // ---------- game logic ----------
+  function step(t) {
+    if (queue.length) dir = queue.shift();
+    const head = snake[0];
+    const nh = [head[0] + dir[0], head[1] + dir[1]];
+    const hitWall = nh[0] < 0 || nh[0] >= COLS || nh[1] < 0 || nh[1] >= ROWS;
+    const hitSelf = snake.slice(0, -1).some((p) => same(p, nh)); // tail moves away this turn
+    if (hitWall || hitSelf) { die(t); return; }
+
+    prev = snake.map((p) => p.slice());
+    snake.unshift(nh);
+    if (same(nh, food)) {
+      score++;
+      coins++; earnedThisRun++;
+      store.set("pocketSnakeCoins", String(coins));
+      bumpCoins();
+      delay = Math.max(MIN_DELAY, delay - 3);
+      burst(food, C.apple, 16);
+      popups.push({ x: nh[0] + 0.5, y: nh[1] + 0.5, life: 1 });
+      buzz(12);
+      playBloop();
+      updateHud();
+      if (snake.length === COLS * ROWS) { won = true; die(t); return; }
+      placeFood();
+    } else {
+      snake.pop();
+    }
+  }
+
+  function die(t) {
+    state = "over";
+    deadTime = t;
+    prev = snake.map((p) => p.slice());
+    if (!won) { burst(snake[0], C.deadHead, 24); buzz([40, 30, 60]); }
+    if (score > best) { best = score; newBest = true; store.set("pocketSnakeBest", String(best)); }
+    updateHud();
+    showOverlay();
+  }
+
+  function burst(c, color, count) {
+    // Positions are in grid squares so they survive a screen resize
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 5;
+      particles.push({ x: c[0] + 0.5, y: c[1] + 0.5, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        r: 0.07 + Math.random() * 0.08, life: 1, color });
+    }
+  }
+
+  function updateEffects(dt) {
+    for (const p of particles) {
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      p.vx *= Math.pow(0.9, dt * 60); p.vy *= Math.pow(0.9, dt * 60);
+      p.life -= dt / 0.6;
+    }
+    particles = particles.filter((p) => p.life > 0);
+    for (const p of popups) { p.y -= 1.5 * dt; p.life -= dt / 0.8; }
+    popups = popups.filter((p) => p.life > 0);
+  }
+
+  // ---------- drawing ----------
+  function render(t) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.save();
+    if (deadTime !== null && !won) {
+      const shake = 0.25 * cell * (1 - (t - deadTime) / 0.35);
+      if (shake > 0) ctx.translate((Math.random() * 2 - 1) * shake, (Math.random() * 2 - 1) * shake);
+    }
+    ctx.drawImage(bg, 0, 0, W, H);
+
+    let elapsed = state === "playing" ? t - lastStep : state === "paused" ? pausedElapsed : 1;
+    const k = Math.min(1, elapsed / (delay / 1000));   // slide smoothly between squares
+
+    drawFood(t);
+    drawSnake(k, t);
+
+    for (const p of particles) {
+      const r = p.r * cell * (0.4 + 0.6 * p.life);
+      ctx.globalAlpha = clamp01(p.life);
+      ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(p.x * cell, p.y * cell, r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.font = `700 ${Math.round(cell * 0.6)}px ${getComputedStyle(document.body).fontFamily}`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (const p of popups) {
+      ctx.globalAlpha = clamp01(p.life);
+      ctx.fillStyle = C.gold;
+      ctx.fillText("+1", p.x * cell, p.y * cell);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  function drawFood(t) {
+    const x = (food[0] + 0.5) * cell, y = (food[1] + 0.5) * cell;
+    const r = cell * 0.36 * (1 + 0.07 * Math.sin(t * 6)) * easeOut((t - foodBorn) / 0.25);
+    if (r <= 0.5) return;
+    ctx.save();
+    ctx.shadowColor = C.apple; ctx.shadowBlur = cell * 0.7;
+    ctx.fillStyle = C.apple;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = mix(C.apple, "#ffffff", 0.55);
+    ctx.beginPath(); ctx.ellipse(x - r * 0.32, y - r * 0.35, r * 0.22, r * 0.18, -0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = C.leaf;
+    ctx.beginPath(); ctx.ellipse(x + r * 0.4, y - r * 0.98, r * 0.36, r * 0.2, -0.4, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawSnake(k, t) {
+    const dead = state === "over" && !won;
+    const color = (i, n) => dead ? mix(C.deadHead, C.deadTail, n > 1 ? i / (n - 1) : 0) : segColor(i, n, t);
+    const pts = snake.map((b, i) => {
+      const a = i < prev.length ? prev[i] : prev[prev.length - 1];
+      return [(a[0] + (b[0] - a[0]) * k + 0.5) * cell, (a[1] + (b[1] - a[1]) * k + 0.5) * cell];
+    });
+    const n = pts.length;
+    ctx.lineCap = "round";
+    for (let i = n - 1; i > 0; i--) {
+      const frac = i / (n - 1);
+      ctx.strokeStyle = color(i, n);
+      ctx.lineWidth = cell * 0.78 * (1 - 0.3 * frac);
+      ctx.beginPath(); ctx.moveTo(pts[i][0], pts[i][1]); ctx.lineTo(pts[i - 1][0], pts[i - 1][1]); ctx.stroke();
+    }
+    const [hx, hy] = pts[0];
+    ctx.fillStyle = color(0, n);
+    ctx.beginPath(); ctx.arc(hx, hy, cell * 0.44, 0, Math.PI * 2); ctx.fill();
+
+    // Eyes look where the snake is going
+    const [dx, dy] = dir, px = -dy, py = dx;
+    for (const side of [-1, 1]) {
+      const ex = hx + dx * cell * 0.14 + px * side * cell * 0.2;
+      const ey = hy + dy * cell * 0.14 + py * side * cell * 0.2;
+      if (dead) {
+        const s = cell * 0.08;
+        ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = Math.max(1.5, cell * 0.06);
+        ctx.beginPath();
+        ctx.moveTo(ex - s, ey - s); ctx.lineTo(ex + s, ey + s);
+        ctx.moveTo(ex - s, ey + s); ctx.lineTo(ex + s, ey - s);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath(); ctx.arc(ex, ey, cell * 0.12, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#111111";
+        ctx.beginPath(); ctx.arc(ex + dx * cell * 0.04, ey + dy * cell * 0.04, cell * 0.065, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+
+  // ---------- main loop ----------
+  let lastFrame = now();
+  function frame() {
+    const t = now();
+    const dt = Math.min(0.1, t - lastFrame);
+    lastFrame = t;
+    if (state === "playing") {
+      if (t - lastStep > 0.5) lastStep = t;   // tab was in the background
+      while (state === "playing" && t - lastStep >= delay / 1000) {
+        lastStep += delay / 1000;
+        step(t);
+      }
+    }
+    updateEffects(dt);
+    render(t);
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- music: pick any song from your phone or computer ----------
+  let songUrl = null;
+  let muted = store.get("pocketSnakeMuted") === "1";
+  const ICON_ON = '<path fill="currentColor" d="M4 9v6h4l5 4V5L8 9H4Z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>';
+  const ICON_OFF = '<path fill="currentColor" d="M4 9v6h4l5 4V5L8 9H4Z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="m16 9.5 5 5m0-5-5 5"/>';
+
+  function paintMute() {
+    muteBtn.setAttribute("aria-pressed", String(muted));
+    muteBtn.setAttribute("aria-label", muted ? "Unmute music" : "Mute music");
+    $("muteIcon").innerHTML = muted ? ICON_OFF : ICON_ON;
+  }
+
+  function setSong(blob, name) {
+    if (songUrl) URL.revokeObjectURL(songUrl);
+    songUrl = URL.createObjectURL(blob);
+    audio.src = songUrl;
+    songName.textContent = name.replace(/\.[^.]+$/, "");
+    songBtn.classList.remove("empty");
+    songBtn.title = "Change song";
+    muteBtn.hidden = false;
+    paintMute();
+    ensureMusic();
+  }
+
+  function ensureMusic() {
+    // Phones only allow sound after a tap, so every tap tries to (re)start the song
+    initSfx();
+    if (audio.src && !muted && audio.paused) audio.play().catch(() => {});
+  }
+
+  // ---------- apple sound: only when no music is playing ----------
+  const BLOOP = "data:audio/mpeg;base64,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4VilkQrgsTMLlVw+sRLE5ogACqQoUhkgJBOMaSDQaJW5h8dauWVFMwLpjRXkOVH2dLs0w4waKu6kUH1HKyLmJMrIxZrYyIHqXNE44nAvdGmMJkbDkUNeTIGm5qGnLJLET54gNnEUnLFUyWRJCAiLxeSE5A5yJ7iFFVCVGS5BAjaKzJikh5yRouUXC5yyqYYJKEi0Lx8mddWnLDtlnPtsSOyNQ2tyr7RcOWk6M6SnRzCO1wPFSNUX2kK6SyWxkZK7sHI+kJsnnB28vKpUytDwvHBHHZevSF47LSwkHQ5niO5oJaEV1jiGlOB+UFU6PCsdMuynErIozMkbI5zSJFEoiRUdTyicRR5Jc52mtNI4SSrOxyzUWJHLBQmTiRKjTAEshMot8rQ5/1gsz6IhU+MVZSshZ6wDCNEdHx0ZGSMcQavVyExYJ0b/+9JE9QX2Sn69qMZKcs0vx7AhLK5ZYfTmAyWcSyE/nMBjMng4mS65jFCtahXWZie9kxMV3lUGoiuCEIzd3ew6MnoRBXns8Si0VR1gYPtyESXHobTlzlS02CKo5EECJqu1MIR7VbQ6PmjI+aMmySpHIRnsrAIQ/ElS0u86PkpjEdGT4gqjlw6XiCakqO62pypJSNgQkTzQlE6Nkm84DAJeHacSJJbMkSOmz+8yR00io6wmK5qPrZapkjCRwCS/OAQUlJoBRrQUJxykpNglszOVLVRqJ1kTQljkplEURkoBWRa8lqltNgkcuteOj5lbY5cMr9a1ysIzZNiZElEEwksGR9CYqUxll3ZZgEo+86MrntHtrzJisEoyPkp7iEJSpk5BqoVFVsSVO8dKkpj60kk11olASQSUI0bJJLJ0SgbKUwCg+2o4gdJqGCIUlIGyqstiEbLTkSWIzkskk1hElxcdGRktqkxBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqg==";
+  let sfxCtx = null, bloopBuf = null;
+
+  function initSfx() {
+    // Web Audio plays short sounds instantly (a plain <audio> lags on phones)
+    if (sfxCtx) {
+      if (sfxCtx.state === "suspended") sfxCtx.resume().catch(() => {});
+      return;
+    }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try {
+      sfxCtx = new AC();
+      const bin = atob(BLOOP.slice(BLOOP.indexOf(",") + 1));
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      sfxCtx.decodeAudioData(bytes.buffer, (buf) => { bloopBuf = buf; }, () => {});
+    } catch { sfxCtx = null; }
+  }
+
+  const musicPlaying = () => !!audio.src && !audio.paused && !muted;
+
+  function playBloop() {
+    if (musicPlaying()) return;
+    if (sfxCtx && bloopBuf) {
+      if (sfxCtx.state === "suspended") sfxCtx.resume().catch(() => {});
+      const src = sfxCtx.createBufferSource();
+      const gain = sfxCtx.createGain();
+      gain.gain.value = 0.8;
+      src.buffer = bloopBuf;
+      src.connect(gain).connect(sfxCtx.destination);
+      src.start();
+      return;
+    }
+    try { const a = new Audio(BLOOP); a.volume = 0.8; a.play().catch(() => {}); } catch {}
+  }
+  document.addEventListener("keydown", initSfx);
+
+  function toggleMute() {
+    if (!audio.src) return;
+    muted = !muted;
+    store.set("pocketSnakeMuted", muted ? "1" : "0");
+    if (muted) audio.pause(); else audio.play().catch(() => {});
+    paintMute();
+  }
+
+  songBtn.addEventListener("click", () => fileInput.click());
+  muteBtn.addEventListener("click", toggleMute);
+  fileInput.addEventListener("change", () => {
+    const f = fileInput.files && fileInput.files[0];
+    if (!f) return;
+    muted = false; store.set("pocketSnakeMuted", "0");
+    setSong(f, f.name);
+    saveSong(f, f.name);
+    fileInput.value = "";
+  });
+  audio.addEventListener("error", () => {
+    if (!audio.src) return;
+    songName.textContent = "Can't play that file, pick another";
+    songBtn.classList.add("empty");
+  });
+  document.addEventListener("pointerdown", ensureMusic);
+
+  // Remember the chosen song on this device (stays on the device, never uploaded)
+  function openDb() {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open("pocket-snake", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("kv");
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  }
+  async function saveSong(blob, name) {
+    try { (await openDb()).transaction("kv", "readwrite").objectStore("kv").put({ blob, name }, "song"); } catch {}
+  }
+  async function loadSong() {
+    try {
+      const db = await openDb();
+      return await new Promise((res) => {
+        const q = db.transaction("kv").objectStore("kv").get("song");
+        q.onsuccess = () => res(q.result || null);
+        q.onerror = () => res(null);
+      });
+    } catch { return null; }
+  }
+
+  // ---------- start up ----------
+  function boot(data) {
+    newGame();
+    const g = data && data.game;
+    if (g && g.snake && g.COLS === COLS && g.ROWS === ROWS) {
+      // Carry an in-progress game across page updates
+      ({ snake, dir, food, score, delay } = g);
+      prev = snake.map((p) => p.slice());
+      state = g.state === "playing" ? "paused" : g.state;
+      pausedElapsed = 0;
+      if (state === "over") { deadTime = now() - 10; won = !!g.won; newBest = !!g.newBest; }
+      updateHud();
+    }
+    showOverlay();
+    announceUpdate();
+    new ResizeObserver(() => resize()).observe(stage);
+    loadSong().then((s) => { if (s && s.blob) setSong(s.blob, s.name); });
+    try {
+      window.claude?.hot?.snapshot?.(() => ({
+        game: { COLS, ROWS, snake, dir, food, score, delay, state, won, newBest },
+      }));
+    } catch {}
+    requestAnimationFrame(frame);
+  }
+  const hot = window.claude?.hot;
+  hot?.ready ? hot.ready(boot) : boot(hot?.data ?? {});
+})();
+</script>
